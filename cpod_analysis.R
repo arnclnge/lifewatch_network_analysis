@@ -56,6 +56,7 @@ save(duplicates,file="outputs/cpod1_df_duplicates.Rdata")
 #remove duplicated rows where recorded = 10 mins, retain only 60 mins.
 duplicates_10mins <- duplicates %>% filter(recorded==10)
 df <- anti_join(df,duplicates_10mins)
+write_csv(df, "outputs/df.csv")
 
 #double check if there are duplicates
 duplicates0 <- df[duplicated(df[,c(1,2,3,13,17)]),c(1,2,3,13,17)]
