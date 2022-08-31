@@ -8,10 +8,21 @@ an <- read_csv("fish_data/animals_download_date_20220822.csv")
 deploy <- read_csv("fish_data/deployments_all_download_date_20220822.csv")
 tags <- read_csv("fish_data/tags_download_date_20220822.csv")
 
-#input detect_clean from fish_explore.R
+###choose input 01 or 02
 
-detect_bpns_cpod <- detect_clean %>% filter(acoustic_project_code=="bpns" | acoustic_project_code=="cpodnetwork") 
-detect_cpod <- detect_clean %>% filter(acoustic_project_code=="cpodnetwork") 
+# 01 input detect_clean from fish_explore.R - all stations
+
+#detect_bpns_cpod <- detect_clean %>% filter(acoustic_project_code=="bpns" | acoustic_project_code=="cpodnetwork") 
+#detect_cpod <- detect_clean %>% filter(acoustic_project_code=="cpodnetwork") 
+
+# 02 input active stations
+bpns_active <- c('bpns-VG2', 'bpns-WK14', 'bpns-WK12', 'bpns-A1BIS', 'bpns-NRT4', 'bpns-WZ', 'bpns-ZAND4', 'bpns-ZW1', 'bpns-LNG', 'bpns-W1', 'bpns-O6', 'bpns-WENDUINEBANKW', 'bpns-OH1', 'bpns-KB2', 'bpns-middelkerkebank', 'bpns-nieuwpoortbank', 'bpns-D1', 'bpns-bloso', 'bpns-Trapegeer', 'bpns-Whitley', 'bpns-HD17')
+cpod_active <- c('bpns-Westhinder','bpns-Buitenratel','bpns-Birkenfels','bpns-Faulbaums','bpns-Grafton','bpns-Belwindreefballs-CPOD','bpns-Cpowerreefballs-CPOD','bpns-Gardencity') 
+detect_bpns_cpod <- detect_clean %>% filter(station_name %in% bpns_active | station_name %in% cpod_active) 
+#rename HD17 to NRT4
+detect_bpns_cpod$station_name[detect_bpns_cpod$station_name=="bpns-HD17"] <- "bpns-NRT4"
+detect_bpns <- detect_clean %>% filter(station_name %in% bpns_active) 
+detect_cpod <- detect_clean %>% filter(station_name %in% cpod_active)
 
 #summary stats of cpod
 total_tags <- length(unique(detect_cpod$tag_serial_number))
@@ -29,7 +40,25 @@ summary_det_days <- detect_cpod %>% group_by(station_name) %>% summarise(N = len
 summary_species <- detect_cpod %>% group_by(station_name) %>% summarise(N = length(unique(scientific_name))) %>% 
   summarise(Total=total_species, mean = mean(N), SD = sd(N), Max =max(N))
 summary_stats<- dplyr::bind_rows(summary_tags,summary_dets,summary_det_days,summary_species)
-write_csv(summary_stats, "outputs/telemetry/summary_stats_cpod.csv")
+write_csv(summary_stats, "outputs/telemetry/summary_stats_cpod_active.csv")
+
+#summary stats of bpns
+total_tags <- length(unique(detect_bpns$tag_serial_number))
+total_species <- length(unique(detect_bpns$scientific_name))
+total_detection_days <- detect_bpns %>% group_by(station_name) %>% summarise(N = length(unique(date))) 
+total_detection_days <- sum(total_detection_days$N)
+total_network_days <- (as.numeric(difftime( "2022-07-29","2018-10-09", units = "days")))+1
+
+summary_tags <- detect_bpns %>% group_by(station_name) %>% summarise(N = length(unique(tag_serial_number))) %>% 
+  summarise(Total=total_tags, mean = mean(N), SD = sd(N), Max =max(N))
+summary_dets <- detect_bpns %>% group_by(station_name) %>% summarise(N = n()) %>% 
+  summarise(Total=sum(N), mean = mean(N), SD = sd(N), Max =max(N))
+summary_det_days <- detect_bpns %>% group_by(station_name) %>% summarise(N = length(unique(date))) %>% 
+  summarise(Total=sum(N), mean = mean(N), SD = sd(N), Max =max(N))
+summary_species <- detect_bpns %>% group_by(station_name) %>% summarise(N = length(unique(scientific_name))) %>% 
+  summarise(Total=total_species, mean = mean(N), SD = sd(N), Max =max(N))
+summary_stats<- dplyr::bind_rows(summary_tags,summary_dets,summary_det_days,summary_species)
+write_csv(summary_stats, "outputs/telemetry/summary_stats_bpns_active.csv")
 
 ################## COMPUTATION OF REI ###########################
 total_tags <- length(unique(detect_bpns_cpod$tag_serial_number))
@@ -38,8 +67,8 @@ total_detection_days <- detect_bpns_cpod %>% group_by(station_name) %>% summaris
 total_detection_days <- sum(total_detection_days$N)
 total_network_days <- (as.numeric(difftime( "2022-08-07","2014-07-11", units = "days")))+1
 
-# deploy days should be maximum 15 months or 456.25 days
-deploy_bpns_cpod <- deploy %>% as.data.frame() %>% filter(acoustic_project_code=="bpns"| acoustic_project_code=="cpodnetwork") %>% group_by(station_name,acoustic_project_code,deployment_id, deploy_date_time,recover_date_time) %>% filter(!is.na(recover_date_time))%>% 
+# deploy days should be maximum 15 months or 456.25 days # change filter(station_name %in% bpns_active | station_name %in% cpod_active) OR filter(acoustic_project_code=="bpns" | acoustic_project_code=="cpodnetwork")
+deploy_bpns_cpod <- deploy %>% as.data.frame() %>% filter(station_name %in% bpns_active | station_name %in% cpod_active) %>% group_by(station_name,acoustic_project_code,deployment_id, deploy_date_time,recover_date_time) %>% filter(!is.na(recover_date_time))%>% 
   summarise(deploy_days = (as.numeric(difftime(recover_date_time, deploy_date_time, units = "days")))+1) %>% 
   mutate(deploy_days = if_else(deploy_days > 456.25, 456.25, deploy_days)) %>% 
   group_by(station_name,acoustic_project_code) %>% summarise(deploy_days = sum(deploy_days,na.rm=TRUE)) 
@@ -54,7 +83,7 @@ sumREI <- sum(REI$rei)
 REI$Percent_REI <- REI$rei/sumREI*100
 REI$Rank <- rank(-REI$Percent_REI)
 
-write_csv(REI, "outputs/telemetry/REI_withcpod.csv")
+write_csv(REI, "outputs/telemetry/REI_withcpod_active.csv")
 
 #----CUMULATIVE CURVES
 
@@ -74,7 +103,7 @@ labels = as.character(breaks)
 
 ggplot(tags_cumsum, aes(x = receiver_rank, y = cum_unique_entries,color=acoustic_project_code)) + geom_line() + geom_point() +theme_bw()+
   scale_y_continuous(limits = c(50, total_tags), breaks = breaks, labels = labels,name = "No. of tags")+
-  geom_vline(aes(xintercept =45, color = "REI > 0.16%"),linetype="dotted", size=1.5)+
+  geom_vline(aes(xintercept =12, color = "REI > 1.5%"),linetype="dotted", size=1.5)+
   geom_hline(aes(yintercept=total_tags*0.75,color = "75% benchmark"), linetype="dashed")+
   scale_color_manual(values = c("red", "black","orange","blue"))+
   theme(legend.title=element_blank(), legend.position="bottom")
@@ -89,7 +118,7 @@ sp_cumsum <- detect_bpns_cpod %>%
 ggplot(sp_cumsum, aes(x = receiver_rank, y = cum_unique_entries,color=acoustic_project_code)) + geom_line() + geom_point() +theme_bw()+
   geom_hline(aes(yintercept=total_species,color = "100% benchmark"), linetype="dashed")+
   scale_y_continuous(name = "No. of species")+
-  geom_vline(aes(xintercept =45, color = "REI > 0.16%"),linetype="dotted", size=1.5)+
+  geom_vline(aes(xintercept =12, color = "REI > 1.5%"),linetype="dotted", size=1.5)+
   scale_color_manual(values = c("red", "black","orange","blue"))+
   theme(legend.title=element_blank(), legend.position="bottom")
 
@@ -103,7 +132,7 @@ det_cumsum <- detect_bpns_cpod %>%
 ggplot(det_cumsum, aes(x = receiver_rank, y = cum_unique_entries,color=acoustic_project_code)) + geom_line() + geom_point() +theme_bw()+
   geom_hline(aes(yintercept=last(cum_unique_entries)*0.75,color = "75% benchmark"), linetype="dashed")+
   scale_y_continuous(name = "No. of detections")+
-  geom_vline(aes(xintercept =45, color = "REI > 0.16%"),linetype="dotted", size=1.5)+
+  geom_vline(aes(xintercept =12, color = "REI > 1.5%"),linetype="dotted", size=1.5)+
   scale_color_manual(values = c("red", "black","orange","blue"))+
   theme(legend.title=element_blank(), legend.position="bottom")
 
