@@ -4,7 +4,7 @@ con <- connect_to_etn(Sys.getenv("userid"), Sys.getenv("pwd"))
 
 setwd("~/lifewatch_network_analysis/")
 
-# EXTRACT DATA
+#---EXTRACT DATA
 
 projs <- c("bpns", "ws1", "ws2","ws3","cpodnetwork")
 
@@ -13,7 +13,7 @@ recv <- get_receivers(status = c("Available"))
 
 deploy <- get_deployments(network_project_code = projs)
 deploy_active <- deploy %>% filter(deploy_date_time > as.POSIXct("2021-12-31 00:00:00", tz="UTC"))
-stn_active <- deploy_active %>% distinct(station_name)
+stn_active <- deploy_active %>% summarise(network_project_code, station_name, deploy_longitude,deploy_latitude) %>% unique()
 stn_cpod <- get_deployments(network_project_code = "cpodnetwork") %>%  select(station_name, deploy_longitude,deploy_latitude)%>% unique()
 
 #get detections
@@ -31,7 +31,7 @@ detect_sum <- detect_activeStn %>% group_by(network_project_code, scientific_nam
 write_csv(detect_sum, "~/etn_analysis/detect_activeNetwork2_14-11-2022.csv")
 
 
-# EXPLORE DATA
+#---EXPLORE DATA
 
 #how many detected individuals per station?
 x <- detect_activeStn %>% group_by(network_project_code,scientific_name,year) %>% summarise(no_individuals = length(unique(animal_id))) %>% 
@@ -39,9 +39,9 @@ x <- detect_activeStn %>% group_by(network_project_code,scientific_name,year) %>
 ggplot(x,aes(as.factor(year),no_individuals)) + geom_bar(aes(fill = scientific_name), position = "dodge",stat='identity')+theme(axis.text.x=element_text(size = 10,angle=15))
 write_csv(x, "~/etn_analysis/network_species.csv")
 
-# DATA VISUALIZATION
+#---DATA VISUALIZATION
 
-# heat map of species detected
+# 1. heat map of species detected
 x <- detect_activeStn %>% group_by(scientific_name,year) %>% summarise(no_individuals = length(unique(animal_id)), detections =n()) %>% 
   filter(scientific_name!="Built-in", year!=2043)
 
@@ -52,6 +52,20 @@ x$scientific_name <- fct_relevel(x$scientific_name, rev)
 ggplot(x, aes(as.factor(year), scientific_name, fill= detections)) + 
   geom_tile() + scale_fill_gradient(low="yellow", high="blue", trans="log1p", breaks = c(1000000, 100000,10000,1000,100,10)) +
   geom_text(aes(label = no_individuals))+
-  theme_linedraw() + theme(axis.title = element_blank())
-ggsave(paste0("plots/cooccur.png"), device='png', dpi = 300)
+  theme_linedraw() + theme(axis.text.x=element_text(size = 7),axis.title = element_blank())
+ggsave("plots/species_yearly_detections_heatmap.png", device='png', dpi = 300)
 
+# 2. map active stations
+library("sf")
+library("rnaturalearth")
+library("rnaturalearthdata")
+library("ggrepel")
+
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+ggplot(data=world) + geom_sf()+
+  geom_point(data=stn_active, aes(x=deploy_longitude, y=deploy_latitude), size = 1)+
+  geom_text_repel(data=stn_active, aes(x=deploy_longitude, y=deploy_latitude, label=station_name), size=2)+
+  coord_sf(xlim = c(2, 4.4), ylim = c(51,52), expand = FALSE)
+
+ggsave("plots/activeStn_map.png", device='png')
