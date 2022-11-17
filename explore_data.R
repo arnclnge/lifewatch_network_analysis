@@ -56,16 +56,35 @@ ggplot(x, aes(as.factor(year), scientific_name, fill= detections)) +
 ggsave("plots/species_yearly_detections_heatmap.png", device='png', dpi = 300)
 
 # 2. map active stations
-library("sf")
-library("rnaturalearth")
-library("rnaturalearthdata")
-library("ggrepel")
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(ggrepel)
+library(rgdal)
+library(broom)
+library(maptools)
+library(ggspatial)
 
 world <- ne_countries(scale = "medium", returnclass = "sf")
+world_points<- st_centroid(world)
+world_points <- cbind(world, st_coordinates(st_centroid(world$geometry)))
+
+bpns <- readOGR( 
+  dsn= "~/lifewatch_network_analysis/shp/belgium_eez/", 
+  layer="eez",
+  verbose=FALSE)
+bpns_fortified <- tidy(bpns, region = "geoname")
 
 ggplot(data=world) + geom_sf()+
+  geom_polygon(data = bpns_fortified, aes(x = long, y = lat, group = group), fill="lightgrey", alpha=0.75)+
   geom_point(data=stn_active, aes(x=deploy_longitude, y=deploy_latitude), size = 1)+
-  geom_text_repel(data=stn_active, aes(x=deploy_longitude, y=deploy_latitude, label=station_name), size=2)+
-  coord_sf(xlim = c(2, 4.4), ylim = c(51,52), expand = FALSE)
+  geom_text_repel(data=stn_active, aes(x=deploy_longitude, y=deploy_latitude, label=station_name), size=1.5)+
+  coord_sf(xlim = c(2, 4.4), ylim = c(51,51.9), expand = FALSE)+theme_bw()+theme(axis.title = element_blank())+
+  #geom_text(data= world_points,aes(x=X, y=Y, label=name),color = "darkblue", fontface = "bold", check_overlap = FALSE)+
+  annotate(geom = "text", x = c(3.25, 4.3, 2.46), y = c(51.15, 51.75, 51.03), label = c("BE", "NL","FR"), size = 3) +
+  annotation_scale(location = "br", width_hint = 0.2) +
+  annotation_north_arrow(location = "br", which_north = "true", 
+                         pad_x = unit(0.3, "in"), pad_y = unit(0.2, "in"),
+                         style = north_arrow_fancy_orienteering)
 
-ggsave("plots/activeStn_map.png", device='png')
+ggsave("plots/activeStn_map.png", device='png', dpi =300)
