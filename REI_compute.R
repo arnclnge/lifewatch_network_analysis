@@ -26,7 +26,7 @@ stn_active <- deploy_active %>% summarise(acoustic_project_code, station_name, d
                   mutate(first_deploy = first_deploy$first_deploy[match(station_name, first_deploy$station_name)]) %>% 
                   filter(first_deploy < as.POSIXct("2021-01-01 00:00:00", tz="UTC"))
 
-#get detections
+#get detections of stations with active deployments
 detect <- get_acoustic_detections(acoustic_project_code = projs,station_name = stn_active$station_name, start_date = 2014, scientific_name =sp) %>%  #scientific_name =sp for specific species
   mutate(date = as.Date(date_time))
 

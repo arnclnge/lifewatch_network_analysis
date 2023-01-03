@@ -92,7 +92,7 @@ ggsave("plots/activeStn_map.png", device='png', dpi =300)
 # 3. Timeline of when species were tagged and station detections
 
 projs <- c("bpns", "ws1", "ws2","ws3","cpodnetwork")      #  "bpns", "ws1", "ws2","ws3","cpodnetwork"
-sp <- c("Alosa fallax") #"Alosa fallax", "Anguilla anguilla", "Gadus morhua", "Dicentrarchus labrax","Raja clavata"
+sp <- c("Raja clavata") #"Alosa fallax", "Anguilla anguilla", "Gadus morhua", "Dicentrarchus labrax","Raja clavata"
 
 #get active deployments
 deploy <- get_acoustic_deployments(acoustic_project_code = projs, open_only = FALSE)
@@ -102,7 +102,7 @@ stn_active <- deploy_active %>% summarise(acoustic_project_code, station_name, d
 
 #get detections of stations with active deployments
 detect <- get_acoustic_detections(acoustic_project_code = projs,station_name = stn_active$station_name, start_date = 2014, scientific_name =sp) %>%  #scientific_name =sp for specific species
-  mutate(date = as.Date(date_time)) %>% as.data.frame() %>% select(date_time, station_name) %>% mutate(type = "detection")
+  mutate(date = as.Date(date_time)) %>% as.data.frame() 
 
 #get tags of detections
 tags_detect <- detect %>% summarise(tag_serial =unique(tag_serial_number))
@@ -110,16 +110,17 @@ tag_df <- get_tags(tag_serial_number = tags_detect$tag_serial)
 #get animals of detections
 an_df <- get_animals(tag_serial_number = tags_detect$tag_serial)
 an_df <- an_df %>% select(release_date_time, release_location) %>% mutate(type = "animal release")
-names(an_df) <- c("date_time", "station_name")
+names(an_df) <- c("date_time", "station_name","type")
 
 #merge detect & tag data
+detect <- detect %>% select(date_time, station_name) %>% mutate(type = "detection")
 detect_and_tags <- rbind(detect,an_df)
 
 detect_and_tags %>% group_by(type) %>% arrange(station_name, .by_group=TRUE) %>% 
   mutate(station_name=factor(station_name, levels=unique(station_name))) %>% 
   ggplot(aes(date_time, station_name, colour = type, shape = type)) + geom_point(size = 1) +
     scale_color_manual(values = c("animal release" = "red", "detection" = "black")) + scale_shape_manual(values=c(17,16))+
-    theme_linedraw()+ theme(axis.title = element_blank())+ ggtitle("Twait shad: timeline of animal release and detections")+
+    theme_linedraw()+ theme(axis.title = element_blank())+ ggtitle("Thornback ray: timeline of animal release and detections")+
     scale_y_discrete(limits = levels(detect_and_tags$type))
 
-ggsave("plots/twait_release_detections.png", device='png', dpi = 300, width=13, height=7)
+ggsave("plots/ray_release_detections.png", device='png', dpi = 300, width=13, height=7)
