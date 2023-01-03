@@ -8,20 +8,26 @@ setwd("~/lifewatch_network_analysis/")
 
 #---Extract data
 
-projs <- c("bpns", "ws1", "ws2","ws3","cpodnetwork")
-sp <- c("Alosa fallax", "Anguilla anguilla", "Gadus morhua", "Dicentrarchus labrax","Raja clavata", "Pleuronectes platessa")
+projs <- c("ws1", "ws2","ws3")      #  "bpns", "ws1", "ws2","ws3","cpodnetwork"
+sp <- c("Raja clavata") #"Alosa fallax", "Anguilla anguilla", "Gadus morhua", "Dicentrarchus labrax","Raja clavata"
 
 #SETTINGS
 
 #get active deployments
-recv <- get_receivers(status = c("Available"))
+recv <- get_acoustic_receivers(status = c("available"))
 deploy <- get_acoustic_deployments(acoustic_project_code = projs, open_only = FALSE)
 deploy_active <- get_acoustic_deployments(acoustic_project_code = projs, open_only = TRUE)
 deploy_active <- deploy_active %>% filter(deploy_date_time > as.POSIXct("2021-12-31 00:00:00", tz="UTC") | battery_estimated_end_date > Sys.Date())
-stn_active <- deploy_active %>% summarise(acoustic_project_code, station_name, deploy_longitude,deploy_latitude) %>% unique()
+
+#remove new stations = deployments which only started in 2021
+first_deploy <- deploy %>% group_by(station_name) %>% summarise(first_deploy = min(deploy_date_time)) 
+
+stn_active <- deploy_active %>% summarise(acoustic_project_code, station_name, deploy_longitude,deploy_latitude) %>% unique() %>% 
+                  mutate(first_deploy = first_deploy$first_deploy[match(station_name, first_deploy$station_name)]) %>% 
+                  filter(first_deploy < as.POSIXct("2021-01-01 00:00:00", tz="UTC"))
 
 #get detections
-detect <- get_acoustic_detections(acoustic_project_code = projs,station_name = stn_active$station_name, start_date = 2014) %>%  #scientific_name =sp for specific species
+detect <- get_acoustic_detections(acoustic_project_code = projs,station_name = stn_active$station_name, start_date = 2014, scientific_name =sp) %>%  #scientific_name =sp for specific species
   mutate(date = as.Date(date_time))
 
 ####################################################################################################################################
@@ -63,7 +69,7 @@ detect <- anti_join(detect,detect_rm, by=c('station_name','deploy_longitude','de
 dup0 <- detect[duplicated(detect[,c("detection_id","date_time")]),c("detection_id","date_time")]
 dup0[,2] <- as.POSIXct(dup0[,2], format = "%Y-%m-%d %H:%M:%S", tz="UTC")
 dup <- merge(dup0,detect)
-write_csv(dup,"csv/detections_20221124_duplicates.csv")
+write_csv(dup,"csv/detections_20230102_duplicates.csv")
 
 #################################################################
 
@@ -76,23 +82,14 @@ network_summary <- detect %>% group_by(acoustic_project_code) %>% summarise(no_s
 
 write_csv(network_summary, "csv/network_summary.csv")
 
-summary_tags <- detect  %>% group_by(station_name) %>% summarise(N = length(unique(acoustic_tag_id))) %>% 
-  summarise(Total=total_tags, mean = mean(N), SD = sd(N), Max =max(N))
-summary_dets <- detect %>% group_by(station_name) %>% summarise(N = n()) %>% 
-  summarise(Total=sum(N), mean = mean(N), SD = sd(N), Max =max(N))
-summary_det_days <- detect_cpod %>% group_by(station_name) %>% summarise(N = length(unique(date))) %>% 
-  summarise(Total=sum(N), mean = mean(N), SD = sd(N), Max =max(N))
-summary_species <- detect_cpod %>% group_by(station_name) %>% summarise(N = length(unique(scientific_name))) %>% 
-  summarise(Total=total_species, mean = mean(N), SD = sd(N), Max =max(N))
-summary_stats<- dplyr::bind_rows(summary_tags,summary_dets,summary_det_days,summary_species)
-write_csv(summary_stats, "outputs/telemetry/summary_stats_cpod.csv")
-
-################## COMPUTATION OF REI ###########################
 total_tags <- length(unique(detect$acoustic_tag_id))
 total_species <- length(unique(detect$scientific_name))
-total_detection_days <- detect %>% group_by(station_name) %>% summarise(N = length(unique(date))) 
-total_detection_days <- sum(total_detection_days$N)
+total_detection_days <- detect %>% summarise(length(unique(date))) 
+total_detection_days <- total_detection_days$`length(unique(date))`
 total_network_days <- (as.numeric(difftime(max(detect$date),min(detect$date), units = "days")))+1
+
+
+################## COMPUTATION OF REI ###########################
 
 # deploy days should be maximum 15 months or 456.25 days
 deploy_summary <- deploy %>% as.data.frame() %>% filter(station_name %in% stn_active$station_name) %>% 
@@ -128,12 +125,12 @@ tags_cumsum <- detect %>%
   group_by(receiver_rank,acoustic_project_code) %>%
   summarise(cum_unique_entries = last(cum_unique_entries))
 
-breaks = seq(50, total_tags, by=50)
+breaks = seq(5, total_tags, by=10)
 labels = as.character(breaks)
 
 ggplot(tags_cumsum, aes(x = receiver_rank, y = cum_unique_entries,color=acoustic_project_code)) + geom_point(size=2) +
-  scale_y_continuous(limits = c(50, total_tags), breaks = breaks, labels = labels,name = "No. of tags")+
-  geom_vline(aes(xintercept =32, color = "REI > 1.15%"),linetype="dotted")+
+  scale_y_continuous(limits = c(0, total_tags), breaks = breaks, labels = labels,name = "No. of tags")+
+  geom_vline(aes(xintercept =12, color = "REI > 2.4%"),linetype="dotted")+
   geom_hline(aes(yintercept=total_tags*0.75,color = "75% benchmark"), linetype="dashed")+
   scale_color_manual(values = c("darkgrey", "black","green", "red","purple","orange","blue"))+
   theme_linedraw()+theme(legend.title=element_blank(), legend.position="bottom")
@@ -150,7 +147,7 @@ sp_cumsum <- detect %>%
 ggplot(sp_cumsum, aes(x = receiver_rank, y = cum_unique_entries,color=acoustic_project_code)) + geom_point()+
   geom_hline(aes(yintercept=total_species,color = "100% benchmark"), linetype="dashed")+
   scale_y_continuous(name = "No. of species")+
-  geom_vline(aes(xintercept =32, color = "REI > 1.15%"),linetype="dotted", size=1.5)+
+  geom_vline(aes(xintercept =12, color = "REI > 2.4%"),linetype="dotted", size=1.5)+
   scale_color_manual(values = c("darkgrey", "black","green", "red","purple","orange","blue"))+
   theme_linedraw()+theme(legend.title=element_blank(), legend.position="bottom")
 
@@ -166,7 +163,7 @@ det_cumsum <- detect %>%
 ggplot(det_cumsum, aes(x = receiver_rank, y = cum_unique_entries,color=acoustic_project_code)) + geom_point(data=det_cumsum,) +
   geom_hline(aes(yintercept=last(cum_unique_entries)*0.75,color = "75% benchmark"), linetype="dashed")+
   scale_y_continuous(name = "No. of detections")+
-  geom_vline(aes(xintercept =32, color = "REI > 1.15%"),linetype="dotted", size=1.5)+
+  geom_vline(aes(xintercept =12, color = "REI > 2.4%"),linetype="dotted", size=1.5)+
   scale_color_manual(values = c("darkgrey", "black","green", "red","purple","orange","blue"))+
   theme_linedraw()+theme(legend.title=element_blank(), legend.position="bottom")
 
@@ -204,9 +201,9 @@ stn_sp$scientific_name <- factor(stn_sp$scientific_name, levels = stn_sp$scienti
 unique_fish$scientific_name <- factor(unique_fish$scientific_name, levels =  stn_sp$scientific_name[order(stn_sp$stn,decreasing = FALSE)])
 
 ggplot(unique_fish, aes(station_name, scientific_name, fill= Detection_days)) + 
-  geom_tile() + scale_fill_gradient(low="yellow", high="blue", trans="log1p", breaks = c(1000000, 100000,10000,1000,100,10)) +
+  geom_tile() + scale_fill_gradient(low="yellow", high="blue") +  #for large detections: + scale_fill_gradient(low="yellow", high="blue", trans="log1p", breaks = c(1000000, 100000,10000,1000,100,10)) 
   geom_text(aes(label = no_individuals), size=2.5)+
-  geom_vline(aes(xintercept ="bpns-ZW1"),linetype="dotted", color = "red")+
+  geom_vline(aes(xintercept ="ws-A1"),linetype="dotted", color = "red")+
   theme_linedraw() + theme(axis.text.x=element_text(size = 9, angle = 90, hjust=1),axis.text.y = element_text(face="italic"),axis.title = element_blank())  
 
-ggsave("plots/REI_heatmap.png", device='png', dpi = 300, width=13, height=7)
+ggsave("plots/REI_heatmap.png", device='png', dpi = 300, width=13, height=4)
