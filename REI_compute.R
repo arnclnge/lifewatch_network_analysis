@@ -9,7 +9,7 @@ setwd("~/lifewatch_network_analysis/")
 #---Extract data
 
 projs <- c("ws1", "ws2","ws3")      #  "bpns", "ws1", "ws2","ws3","cpodnetwork"
-sp <- c("Raja clavata") #"Alosa fallax", "Anguilla anguilla", "Gadus morhua", "Dicentrarchus labrax","Raja clavata"
+sp <- c("Anguilla anguilla") #"Alosa fallax", "Anguilla anguilla", "Gadus morhua", "Dicentrarchus labrax","Raja clavata"
 
 #SETTINGS
 
@@ -20,11 +20,11 @@ deploy_active <- get_acoustic_deployments(acoustic_project_code = projs, open_on
 deploy_active <- deploy_active %>% filter(deploy_date_time > as.POSIXct("2021-12-31 00:00:00", tz="UTC") | battery_estimated_end_date > Sys.Date())
 
 #remove new stations = deployments which only started in 2021
-first_deploy <- deploy %>% group_by(station_name) %>% summarise(first_deploy = min(deploy_date_time)) 
+#first_deploy <- deploy %>% group_by(station_name) %>% summarise(first_deploy = min(deploy_date_time)) 
 
-stn_active <- deploy_active %>% summarise(acoustic_project_code, station_name, deploy_longitude,deploy_latitude) %>% unique() %>% 
-                  mutate(first_deploy = first_deploy$first_deploy[match(station_name, first_deploy$station_name)]) %>% 
-                  filter(first_deploy < as.POSIXct("2021-01-01 00:00:00", tz="UTC"))
+stn_active <- deploy_active %>% summarise(acoustic_project_code, station_name, deploy_longitude,deploy_latitude) %>% unique() 
+#                  %>% mutate(first_deploy = first_deploy$first_deploy[match(station_name, first_deploy$station_name)]) %>% 
+#                  filter(first_deploy < as.POSIXct("2021-01-01 00:00:00", tz="UTC")) #retain only stations whose first deployments were prior to 2021
 
 #get detections of stations with active deployments
 detect <- get_acoustic_detections(acoustic_project_code = projs,station_name = stn_active$station_name, start_date = 2014, scientific_name =sp) %>%  #scientific_name =sp for specific species
@@ -130,7 +130,7 @@ labels = as.character(breaks)
 
 ggplot(tags_cumsum, aes(x = receiver_rank, y = cum_unique_entries,color=acoustic_project_code)) + geom_point(size=2) +
   scale_y_continuous(limits = c(0, total_tags), breaks = breaks, labels = labels,name = "No. of tags")+
-  geom_vline(aes(xintercept =12, color = "REI > 2.4%"),linetype="dotted")+
+  geom_vline(aes(xintercept =17, color = "REI > 2.87%"),linetype="dotted")+
   geom_hline(aes(yintercept=total_tags*0.75,color = "75% benchmark"), linetype="dashed")+
   scale_color_manual(values = c("darkgrey", "black","green", "red","purple","orange","blue"))+
   theme_linedraw()+theme(legend.title=element_blank(), legend.position="bottom")
@@ -147,7 +147,7 @@ sp_cumsum <- detect %>%
 ggplot(sp_cumsum, aes(x = receiver_rank, y = cum_unique_entries,color=acoustic_project_code)) + geom_point()+
   geom_hline(aes(yintercept=total_species,color = "100% benchmark"), linetype="dashed")+
   scale_y_continuous(name = "No. of species")+
-  geom_vline(aes(xintercept =12, color = "REI > 2.4%"),linetype="dotted", size=1.5)+
+  geom_vline(aes(xintercept =17, color = "REI > 2.87%"),linetype="dotted", size=1.5)+
   scale_color_manual(values = c("darkgrey", "black","green", "red","purple","orange","blue"))+
   theme_linedraw()+theme(legend.title=element_blank(), legend.position="bottom")
 
@@ -163,7 +163,7 @@ det_cumsum <- detect %>%
 ggplot(det_cumsum, aes(x = receiver_rank, y = cum_unique_entries,color=acoustic_project_code)) + geom_point(data=det_cumsum,) +
   geom_hline(aes(yintercept=last(cum_unique_entries)*0.75,color = "75% benchmark"), linetype="dashed")+
   scale_y_continuous(name = "No. of detections")+
-  geom_vline(aes(xintercept =12, color = "REI > 2.4%"),linetype="dotted", size=1.5)+
+  geom_vline(aes(xintercept =17, color = "REI > 2.87%"),linetype="dotted", size=1.5)+
   scale_color_manual(values = c("darkgrey", "black","green", "red","purple","orange","blue"))+
   theme_linedraw()+theme(legend.title=element_blank(), legend.position="bottom")
 
@@ -186,12 +186,16 @@ axiscolor = colorlist[labs %in% redlabs+1]
 ggplot(unique_an,aes(scientific_name,station_name))+geom_point(size=3, colour='red')+theme_linedraw()+ 
   theme(axis.text.x=element_text(size = 10,angle=20, hjust=1),axis.text.y = element_text(color=axiscolor),axis.title.x=element_blank())
 
-#HEAT MAP REI
+#---HEAT MAP REI
 
 detect$date_hour <- format(detect$date_time,format='%Y-%m-%d %H')
 
 unique_fish <- detect %>% group_by(station_name,receiver_rank,scientific_name) %>% summarise(no_individuals = length(unique(animal_id)), Detection_days = length(unique(date))) %>% 
   as.data.frame()
+
+#add other stations to the plot, those with no detections of the species of interest
+stn_no_detections_sp <- stn_active %>% filter(!station_name %in% unique_fish$station_name)%>% mutate(scientific_name = sp, no_individuals=0)
+unique_fish <- unique_fish %>% bind_rows(stn_no_detections_sp[,c("station_name", "scientific_name", "no_individuals")]) 
 
 #rank stations 
 unique_fish$station_name <- factor(unique_fish$station_name, levels = unique(unique_fish$station_name[order(unique_fish$receiver_rank,decreasing = FALSE)]))
@@ -202,8 +206,11 @@ unique_fish$scientific_name <- factor(unique_fish$scientific_name, levels =  stn
 
 ggplot(unique_fish, aes(station_name, scientific_name, fill= Detection_days)) + 
   geom_tile() + scale_fill_gradient(low="yellow", high="blue") +  #for large detections: + scale_fill_gradient(low="yellow", high="blue", trans="log1p", breaks = c(1000000, 100000,10000,1000,100,10)) 
-  geom_text(aes(label = no_individuals), size=2.5)+
-  geom_vline(aes(xintercept ="ws-A1"),linetype="dotted", color = "red")+
-  theme_linedraw() + theme(axis.text.x=element_text(size = 9, angle = 90, hjust=1),axis.text.y = element_text(face="italic"),axis.title = element_blank())  
+  geom_text(aes(label = no_individuals), size=3.5)+
+  geom_vline(aes(xintercept ="ws-4",color = "Performance benchmark cut-off"),linetype="dotted", size=1.5)+
+  theme_classic() + theme(axis.text.x=element_text(size = 9, angle = 90, hjust=1),axis.text.y = element_text(face="italic"),axis.title = element_blank(),
+                          legend.position="bottom") 
 
-ggsave("plots/REI_heatmap.png", device='png', dpi = 300, width=13, height=4)
+ggsave(paste0("plots/",sp," WS_REI_heatmap.png"), device='png', dpi = 300, width=13, height=3.5)
+
+geom_hline(aes(yintercept=last(cum_unique_entries)*0.75,color = "75% benchmark"), linetype="dashed")
