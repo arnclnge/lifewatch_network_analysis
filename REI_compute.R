@@ -8,8 +8,8 @@ setwd("~/lifewatch_network_analysis/")
 
 #---Extract data
 
-projs <- c("ws1", "ws2","ws3")      #  "bpns", "ws1", "ws2","ws3","cpodnetwork"
-sp <- c("Anguilla anguilla") #"Alosa fallax", "Anguilla anguilla", "Gadus morhua", "Dicentrarchus labrax","Raja clavata"
+projs <- c("bpns","cpodnetwork")      #  "bpns", "ws1", "ws2","ws3","cpodnetwork"
+sp <- c("Gadus morhua") #"Alosa fallax", "Anguilla anguilla", "Gadus morhua", "Dicentrarchus labrax","Raja clavata"
 
 #SETTINGS
 
@@ -112,7 +112,7 @@ REI <- REI %>% mutate(tags_percent = no_tags/total_tags*100, species_percent = n
 
 write_csv(REI, "csv/REI_sp.csv")
 
-#----CUMULATIVE CURVES
+################### CUMULATIVE CURVES #########################
 
 #add REI ranking to detect
 detect$receiver_rank <- REI$Rank[match(detect$station_name,REI$station_name)]
@@ -128,31 +128,11 @@ tags_cumsum <- detect %>%
 breaks = seq(5, total_tags, by=10)
 labels = as.character(breaks)
 
-ggplot(tags_cumsum, aes(x = receiver_rank, y = cum_unique_entries,color=acoustic_project_code)) + geom_point(size=2) +
-  scale_y_continuous(limits = c(0, total_tags), breaks = breaks, labels = labels,name = "No. of tags")+
-  geom_vline(aes(xintercept =17, color = "REI > 2.87%"),linetype="dotted")+
-  geom_hline(aes(yintercept=total_tags*0.75,color = "75% benchmark"), linetype="dashed")+
-  scale_color_manual(values = c("darkgrey", "black","green", "red","purple","orange","blue"))+
-  theme_linedraw()+theme(legend.title=element_blank(), legend.position="bottom")
-
-ggsave("plots/tags_cumsum_sp.png", device='png', dpi = 300, width= 7, height = 5)
-
 #SPECIES
 sp_cumsum <- detect %>%
   mutate(cum_unique_entries = cumsum(!duplicated(scientific_name))) %>%
   group_by(receiver_rank,acoustic_project_code) %>%
   summarise(cum_unique_entries = last(cum_unique_entries))
-
-
-ggplot(sp_cumsum, aes(x = receiver_rank, y = cum_unique_entries,color=acoustic_project_code)) + geom_point()+
-  geom_hline(aes(yintercept=total_species,color = "100% benchmark"), linetype="dashed")+
-  scale_y_continuous(name = "No. of species")+
-  geom_vline(aes(xintercept =17, color = "REI > 2.87%"),linetype="dotted", size=1.5)+
-  scale_color_manual(values = c("darkgrey", "black","green", "red","purple","orange","blue"))+
-  theme_linedraw()+theme(legend.title=element_blank(), legend.position="bottom")
-
-ggsave("plots/sp_cumsum_sp.png", device='png', dpi = 300, width= 7, height = 5)
-
 
 #DETECTIONS
 det_cumsum <- detect %>%
@@ -160,34 +140,55 @@ det_cumsum <- detect %>%
   group_by(receiver_rank,acoustic_project_code) %>%
   summarise(cum_unique_entries = last(cum_unique_entries))
 
+################### GET BENCHMARKS ###########################
+
+tag_benchmark <- total_tags*0.75
+sp_benchmark <- total_species
+det_benchmark <- nrow(detect)*0.75
+
+#get minimum receiver ranks to meet performance benchmarks
+tag_min_rank <- tags_cumsum %>% filter(cum_unique_entries >= tag_benchmark) %>% as.data.frame() %>% slice_min(receiver_rank) %>% pull(receiver_rank)
+sp_min_rank <- sp_cumsum %>% filter(cum_unique_entries >= sp_benchmark) %>% as.data.frame() %>% slice_min(receiver_rank) %>% pull(receiver_rank)
+det_min_rank <- det_cumsum %>% filter(cum_unique_entries >= det_benchmark) %>% as.data.frame() %>% slice_min(receiver_rank) %>% pull(receiver_rank)
+
+#decide overall minimum rank of receiver needed to meet ALL 3 performance benchmarks
+receiver_overall_rank <- max(tag_min_rank,sp_min_rank,det_min_rank)
+REI_overall_rank <- REI$Percent_REI[REI$Rank == receiver_overall_rank]
+station_benchmark <- REI$station_name[REI$Rank == receiver_overall_rank]
+
+###################### PLOT CUMULATIVE CURVES ########################
+
+#tags
+ggplot(tags_cumsum, aes(x = receiver_rank, y = cum_unique_entries,color=acoustic_project_code)) + geom_point(size=2) +
+  scale_y_continuous(limits = c(0, total_tags), breaks = breaks, labels = labels,name = "No. of tags")+
+  geom_vline(aes(xintercept =17, color = paste0("REI > ", round(REI_overall_rank,3),"%")),linetype="dotted")+
+  geom_hline(aes(yintercept=tag_benchmark,color = "75% benchmark"), linetype="dashed")+
+  scale_color_manual(values = c("darkgrey", "black","green", "red","purple","orange","blue"))+
+  theme_linedraw()+theme(legend.title=element_blank(), legend.position="bottom")
+
+ggsave("plots/tags_cumsum_sp.png", device='png', dpi = 300, width= 7, height = 5)
+
+#species
+ggplot(sp_cumsum, aes(x = receiver_rank, y = cum_unique_entries,color=acoustic_project_code)) + geom_point()+
+  geom_hline(aes(yintercept=sp_benchmark,color = "100% benchmark"), linetype="dashed")+
+  scale_y_continuous(name = "No. of species")+
+  geom_vline(aes(xintercept =17, color = paste0("REI > ", round(REI_overall_rank,3),"%")),linetype="dotted", size=1.5)+
+  scale_color_manual(values = c("darkgrey", "black","green", "red","purple","orange","blue"))+
+  theme_linedraw()+theme(legend.title=element_blank(), legend.position="bottom")
+
+ggsave("plots/sp_cumsum_sp.png", device='png', dpi = 300, width= 7, height = 5)
+
+#detections
 ggplot(det_cumsum, aes(x = receiver_rank, y = cum_unique_entries,color=acoustic_project_code)) + geom_point(data=det_cumsum,) +
-  geom_hline(aes(yintercept=last(cum_unique_entries)*0.75,color = "75% benchmark"), linetype="dashed")+
+  geom_hline(aes(yintercept=det_benchmark,color = "75% benchmark"), linetype="dashed")+
   scale_y_continuous(name = "No. of detections")+
-  geom_vline(aes(xintercept =17, color = "REI > 2.87%"),linetype="dotted", size=1.5)+
+  geom_vline(aes(xintercept =17, color = paste0("REI > ", round(REI_overall_rank,3),"%")),linetype="dotted", size=1.5)+
   scale_color_manual(values = c("darkgrey", "black","green", "red","purple","orange","blue"))+
   theme_linedraw()+theme(legend.title=element_blank(), legend.position="bottom")
 
 ggsave("plots/dets_cumsum_sp.png", device='png', dpi = 300, width= 7, height = 5)
 
-#VISUALIZE species plot by ranking
-unique_an <- detect %>% group_by(station_name,acoustic_project_code,receiver_rank,scientific_name) %>% summarise(detections=n())
-unique_an$station_name <- factor(unique_an$station_name, levels = unique(unique_an$station_name[order(unique_an$receiver_rank,decreasing = TRUE)]))
-stn_sp <- unique_an %>% group_by(scientific_name) %>% summarise(stn=n()) 
-stn_sp$scientific_name <- factor(stn_sp$scientific_name, levels = stn_sp$scientific_name[order(stn_sp$stn,decreasing = TRUE)])
-unique_an$scientific_name <- factor(unique_an$scientific_name, levels =  stn_sp$scientific_name[order(stn_sp$stn,decreasing = TRUE)])
-
-REI <- REI[order(-REI$Rank),]
-labs = REI$acoustic_project_code
-redlabs <- "cpodnetwork"
-colorlist = c("black","darkorange")
-# one of many ways to generate the color labels
-axiscolor = colorlist[labs %in% redlabs+1]
-
-ggplot(unique_an,aes(scientific_name,station_name))+geom_point(size=3, colour='red')+theme_linedraw()+ 
-  theme(axis.text.x=element_text(size = 10,angle=20, hjust=1),axis.text.y = element_text(color=axiscolor),axis.title.x=element_blank())
-
 #---HEAT MAP REI
-
 detect$date_hour <- format(detect$date_time,format='%Y-%m-%d %H')
 
 unique_fish <- detect %>% group_by(station_name,receiver_rank,scientific_name) %>% summarise(no_individuals = length(unique(animal_id)), Detection_days = length(unique(date))) %>% 
@@ -205,12 +206,31 @@ stn_sp$scientific_name <- factor(stn_sp$scientific_name, levels = stn_sp$scienti
 unique_fish$scientific_name <- factor(unique_fish$scientific_name, levels =  stn_sp$scientific_name[order(stn_sp$stn,decreasing = FALSE)])
 
 ggplot(unique_fish, aes(station_name, scientific_name, fill= Detection_days)) + 
-  geom_tile() + scale_fill_gradient(low="yellow", high="blue") +  #for large detections: + scale_fill_gradient(low="yellow", high="blue", trans="log1p", breaks = c(1000000, 100000,10000,1000,100,10)) 
+  geom_tile() + scale_fill_gradient(low="yellow", high="blue") +  #for large detections, log transform the values: + scale_fill_gradient(low="yellow", high="blue", trans="log1p", breaks = c(1000000, 100000,10000,1000,100,10)) 
   geom_text(aes(label = no_individuals), size=3.5)+
-  geom_vline(aes(xintercept ="ws-4",color = "Performance benchmark cut-off"),linetype="dotted", size=1.5)+
+  geom_vline(aes(xintercept =station_benchmark,color = "Performance benchmark cut-off"),linetype="dotted", size = 1)+
   theme_classic() + theme(axis.text.x=element_text(size = 9, angle = 90, hjust=1),axis.text.y = element_text(face="italic"),axis.title = element_blank(),
-                          legend.position="bottom") 
+                          legend.position="bottom", legend.text=element_text(size=9),legend.title=element_text(size=9)) 
 
-ggsave(paste0("plots/",sp," WS_REI_heatmap.png"), device='png', dpi = 300, width=13, height=3.5)
+#change file name: WS or BPNS
+ggsave(paste0("plots/",sp," BPNS_REI_heatmap.png"), device='png', dpi = 500, width=13, height=4.8)
 
-geom_hline(aes(yintercept=last(cum_unique_entries)*0.75,color = "75% benchmark"), linetype="dashed")
+##############################################
+
+#---VISUALIZE species plot by ranking
+unique_an <- detect %>% group_by(station_name,acoustic_project_code,receiver_rank,scientific_name) %>% summarise(detections=n())
+unique_an$station_name <- factor(unique_an$station_name, levels = unique(unique_an$station_name[order(unique_an$receiver_rank,decreasing = TRUE)]))
+stn_sp <- unique_an %>% group_by(scientific_name) %>% summarise(stn=n()) 
+stn_sp$scientific_name <- factor(stn_sp$scientific_name, levels = stn_sp$scientific_name[order(stn_sp$stn,decreasing = TRUE)])
+unique_an$scientific_name <- factor(unique_an$scientific_name, levels =  stn_sp$scientific_name[order(stn_sp$stn,decreasing = TRUE)])
+
+REI <- REI[order(-REI$Rank),]
+labs = REI$acoustic_project_code
+redlabs <- "cpodnetwork"
+colorlist = c("black","darkorange")
+# one of many ways to generate the color labels
+axiscolor = colorlist[labs %in% redlabs+1]
+
+ggplot(unique_an,aes(scientific_name,station_name))+geom_point(size=3, colour='red')+theme_linedraw()+ 
+  theme(axis.text.x=element_text(size = 10,angle=20, hjust=1),axis.text.y = element_text(color=axiscolor),axis.title.x=element_blank())
+
