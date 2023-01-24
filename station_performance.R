@@ -113,7 +113,9 @@ ggsave("plots/deployments_no_download_file.png", device='png', dpi = 300, width=
 ######################################--- Overview
 
 #---how many lost /broken receivers per station and per project
-recv_issue_count <- recv_all_issues %>% group_by(acoustic_project_code, station_name) %>% summarise(deploy_with_issues = n()) 
+recv_issue_count <- recv_all_issues %>% filter(deploy_date_time > as.Date("2013-12-31")) %>% 
+                                        group_by(acoustic_project_code, station_name) %>% 
+                                        summarise(deploy_with_issues = n()) 
 
 #---how many days of data gaps? since not all deployments have recover_date_time, we rely on the next deployment date 
 
@@ -136,26 +138,39 @@ for (n in 1:nrow(deploy_all_in_active_stn)){
           deploy_all_in_active_stn[n,"next_deploy"] <- NA
     }}
 
-#count the days of deployments with no download file
-for (i in 1:nrow(deploy_all_in_active_stn)){
+#count the days of deployments with no download file from 2014! 
+deploy_2014_in_active_stn <- deploy_all_in_active_stn %>% filter(deploy_date_time > as.Date("2013-12-31"))
+for (i in 1:nrow(deploy_2014_in_active_stn)){
   print(i)
-  if(!is.na(deploy_all_in_active_stn$next_deploy[i])){
-  deploy_all_in_active_stn[i,"day_count_to_next_deploy"] <- length(seq(deploy_all_in_active_stn$deploy_date_time[i], deploy_all_in_active_stn$next_deploy[i], by = 1))
+  if(!is.na(deploy_2014_in_active_stn$next_deploy[i])){
+    deploy_2014_in_active_stn[i,"day_count_to_next_deploy"] <- length(seq(deploy_2014_in_active_stn$deploy_date_time[i], deploy_2014_in_active_stn$next_deploy[i], by = 1))
   }
 }
-datagap_station <- deploy_all_in_active_stn %>% filter(is.na(download_file_name)) %>% group_by(station_name) %>% 
+
+datagap_station <- deploy_2014_in_active_stn %>% filter(is.na(download_file_name)) %>% group_by(station_name) %>% 
                           summarise(days_no_data = sum(day_count_to_next_deploy, na.rm=TRUE))
+
+#add first day of deployment, number of days, number of deployments
+#calculate percentage of total deployment days with no download file
+datagap_station <- deploy_2014_in_active_stn %>% group_by(acoustic_project_code, station_name) %>% 
+                              summarise(first_deploy = min(deploy_date_time), 
+                                        total_days_active = length(seq(first_deploy, Sys.Date(), by = 1)),
+                                        no_deployments = n()) %>% 
+                              merge(datagap_station,by=c("station_name"), all=TRUE) %>% 
+                              mutate(datagap_percent = days_no_data/total_days_active*100)
 
 
 #merge info on lost/broken receivers & data gap
 deploy_no_downloadfile_summary <- deploy_no_downloadfile %>% group_by(station_name) %>% summarise(deploy_no_downloadfile = n())
 station_performance_summary <- merge(datagap_station, recv_issue_count, by=c("station_name"), all=TRUE)
-station_performance_summary <- merge(station_performance_summary,deploy_no_downloadfile_summary, by= c("station_name"))
+station_performance_summary <- merge(station_performance_summary,deploy_no_downloadfile_summary, by= c("station_name"), all =TRUE) %>% 
+                                select(-c("acoustic_project_code.x","acoustic_project_code.y"))
 write_csv(station_performance_summary, "csv/station_performance_summary.csv")
 
-# to do: calculate percentage of total deployment days with no download file
-# what to do with deployments of two receivers on the same day (VEMCO & THELMA), and one is lost.. is that data gap?
+#---- plot data gap percent
 
+station_performance_summary %>% ggplot(aes(datagap_percent, station_name))+geom_bar(stat = 'identity')+theme_linedraw()
+ggsave("plots/datagap_station.png", device='png', dpi = 300, width=12, height=8)
 
 # how many days of no detections per station
 data_gaps_station <- detect %>% group_by(acoustic_project_code, station_name) %>% 
@@ -169,7 +184,47 @@ for (i in 1:nrow(data_gaps_station)){
   data_gaps_station$data_gap_percent[i] <- data_gaps_station$missing_dates[i]/length(date_range)*100
 }
 
+# map of stations with data gaps
+stn_coords <- deploy_2014_in_active_stn %>% group_by(station_name) %>% summarise(lat = mean(deploy_latitude),
+                                                                                 lon = mean(deploy_longitude))
+data_gap_map <- station_performance_summary %>% filter(datagap_percent >0) %>% 
+                                                merge(stn_coords,by = "station_name")
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(ggrepel)
+library(rgdal)
+library(broom)
+library(maptools)
+library(ggspatial)
 
-# map of lost receivers
+bpns <- readOGR( 
+  dsn= "~/lifewatch_network_analysis/shp/belgium_eez/", 
+  layer="eez",
+  verbose=FALSE)
+bpns_fortified <- tidy(bpns, region = "geoname")
+
+europe <- readOGR( 
+  dsn= "~/lifewatch_network_analysis/shp/europe/", 
+  layer="Europe",
+  verbose=FALSE)
+eur_fortified <- tidy(europe, region = "NAME")
+
+#active stations
+
+ggplot()+
+  geom_polygon(data = bpns_fortified, aes(x = long, y = lat, group = group), fill="lightgrey", alpha=0.75)+
+  geom_polygon(data=eur_fortified, aes(x = long, y = lat, group = group), fill="white", colour="black")+
+  coord_cartesian(xlim = c(2, 4.4), ylim = c(51,51.9))+
+  geom_point(data=data_gap_map, aes(x=lon, y=lat, color = datagap_percent))+
+  scale_color_gradient(low="blue", high="red")+
+  geom_text_repel(data=data_gap_map, aes(x=lon, y=lat, label=station_name), size=3)+
+  theme_classic()+theme(axis.title = element_blank())+
+  annotate(geom = "text", x = c(3.25, 4.4, 2.46), y = c(51.15, 51.5, 51.03), label = c("BE", "NL","FR"), size = 3) +
+  annotation_scale(location = "br", width_hint = 0.2) +
+  annotation_north_arrow(location = "br", which_north = "true", 
+                         pad_x = unit(0.3, "in"), pad_y = unit(0.2, "in"),
+                         style = north_arrow_fancy_orienteering)
+
+ggsave("plots/datagap_map.png", device='png', dpi =300, width=14, height=7)
 
 # review literature on assessment of data gaps in acoustic telemetry
