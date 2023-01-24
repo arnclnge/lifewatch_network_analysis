@@ -184,7 +184,16 @@ for (i in 1:nrow(data_gaps_station)){
   data_gaps_station$data_gap_percent[i] <- data_gaps_station$missing_dates[i]/length(date_range)*100
 }
 
-# map of stations with data gaps
+#####################################---venn diagram with REI
+library(ggvenn)
+
+venn_stn <- as.list(read_csv("csv/venn_station.csv"))
+
+ggvenn(venn_stn, show_elements = T, label_sep = "\n", text_size =2.5,
+       fill_color = c("#0073C2FF", "#EFC000FF","#CD534CFF"),
+       stroke_size = 0.25, stroke_alpha = 0.5, set_name_size = 3)
+
+#####################################---map of stations with data gaps
 stn_coords <- deploy_2014_in_active_stn %>% group_by(station_name) %>% summarise(lat = mean(deploy_latitude),
                                                                                  lon = mean(deploy_longitude))
 data_gap_map <- station_performance_summary %>% filter(datagap_percent >0) %>% 
