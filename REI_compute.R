@@ -9,7 +9,7 @@ setwd("~/lifewatch_network_analysis/")
 #---Extract data
 
 projs <- c("bpns","cpodnetwork")      #  "bpns", "ws1", "ws2","ws3","cpodnetwork"
-sp <- c("Gadus morhua") #"Alosa fallax", "Anguilla anguilla", "Gadus morhua", "Dicentrarchus labrax","Raja clavata"
+sp <- c("Raja clavata") #"Alosa fallax", "Anguilla anguilla", "Gadus morhua", "Dicentrarchus labrax","Raja clavata"
 
 #SETTINGS
 
@@ -125,9 +125,6 @@ tags_cumsum <- detect %>%
   group_by(receiver_rank,acoustic_project_code) %>%
   summarise(cum_unique_entries = last(cum_unique_entries))
 
-breaks = seq(5, total_tags, by=10)
-labels = as.character(breaks)
-
 #SPECIES
 sp_cumsum <- detect %>%
   mutate(cum_unique_entries = cumsum(!duplicated(scientific_name))) %>%
@@ -157,6 +154,8 @@ REI_overall_rank <- REI$Percent_REI[REI$Rank == receiver_overall_rank]
 station_benchmark <- REI$station_name[REI$Rank == receiver_overall_rank]
 
 ###################### PLOT CUMULATIVE CURVES ########################
+breaks = seq(5, total_tags, by=10)
+labels = as.character(breaks)
 
 #tags
 ggplot(tags_cumsum, aes(x = receiver_rank, y = cum_unique_entries,color=acoustic_project_code)) + geom_point(size=2) +
