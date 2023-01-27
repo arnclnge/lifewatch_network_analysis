@@ -5,9 +5,9 @@ library(tidyr)
 setwd("~/lifewatch_network_analysis/cpod/")
 
 #input data
-load("data/cpod_df_20180701_20220801_week_hourly.Rdata")
+load("cpod_df_20180701_20220801_week_hourly.Rdata")
 cpod1_df <- as.data.frame(cpod1_df)
-season <- as.data.frame(read_csv("data/seasons.csv"))
+season <- as.data.frame(read_csv("csv/seasons.csv"))
 
 #recode station names
 cpod1_df$station <- recode_factor(cpod1_df$station,"bpns-Reefballs Belwind"="Belwindreefballs","bpns-Reefballs-cpower"="Cpowerreefballs",
@@ -52,7 +52,7 @@ df <- df %>% filter(station != "G-88")
 duplicates0 <- cpod1_df[duplicated(cpod1_df[,c(1,2,3,13,17)]),c(1,2,3,13,17)]
 duplicates0[,2] <- as.POSIXct(duplicates0[,2], format = "%Y-%m-%d %H:%M:%S", tz="UTC")
 duplicates <- merge(duplicates0,cpod1_df)
-save(duplicates,file="data/cpod1_df_duplicates.Rdata")
+save(duplicates,file="csv/cpod1_df_duplicates.csv")
 
 #remove duplicated rows where recorded = 10 mins, retain only 60 mins.
 duplicates_10mins <- duplicates %>% filter(recorded==10)
@@ -65,7 +65,7 @@ write_csv(df, "csv/df.csv")
 duplicates0 <- df[duplicated(df[,c(1,2,3,13,17)]),c(1,2,3,13,17)]
 duplicates0[,2] <- as.POSIXct(duplicates0[,2], format = "%Y-%m-%d %H:%M:%S", tz="UTC")
 duplicates <- merge(duplicates0,df)
-save(duplicates,file="outputs/cpod1_df_duplicates_60mins.Rdata")
+save(duplicates,file="csv/cpod1_df_duplicates_60mins.csv")
 #---still there are duplicates both with 60 mins of recordings
 
 ###DATA EXPLORATION
