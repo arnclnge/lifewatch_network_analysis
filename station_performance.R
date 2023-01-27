@@ -187,11 +187,13 @@ for (i in 1:nrow(data_gaps_station)){
 #####################################---venn diagram with REI
 library(ggvenn)
 
-venn_stn <- as.list(read_csv("csv/venn_station.csv"))
+venn_stn <- drop_na(as.list(read_csv("csv/venn_station.csv")))
+venn_stn <- venn_stn[!is.na(venn_stn)]
 
 ggvenn(venn_stn, show_elements = T, label_sep = "\n", text_size =2.5,
        fill_color = c("#0073C2FF", "#EFC000FF","#CD534CFF"),
-       stroke_size = 0.25, stroke_alpha = 0.5, set_name_size = 3)
+       stroke_size = 0.25, stroke_alpha = 0.5, set_name_size = 4)
+ggsave("plots/venn_station_performance.png", device='png', dpi = 300, width=15, height=13)
 
 #####################################---map of stations with data gaps
 stn_coords <- deploy_2014_in_active_stn %>% group_by(station_name) %>% summarise(lat = mean(deploy_latitude),

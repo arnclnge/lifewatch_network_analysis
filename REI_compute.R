@@ -8,8 +8,8 @@ setwd("~/lifewatch_network_analysis/")
 
 #---Extract data
 
-projs <- c("bpns","cpodnetwork")      #  "bpns", "ws1", "ws2","ws3","cpodnetwork"
-sp <- c("Raja clavata") #"Alosa fallax", "Anguilla anguilla", "Gadus morhua", "Dicentrarchus labrax","Raja clavata"
+projs <- c("bpns", "cpodnetwork")      #  "bpns", "ws1", "ws2","ws3","cpodnetwork"
+sp <- c("Alosa fallax") #"Alosa fallax", "Anguilla anguilla", "Gadus morhua", "Dicentrarchus labrax","Raja clavata"
 
 #SETTINGS
 
@@ -110,7 +110,7 @@ REI$Rank <- rank(-REI$Percent_REI)
 
 REI <- REI %>% mutate(tags_percent = no_tags/total_tags*100, species_percent = no_species/total_species*100, dd_percent = detection_days/1964*100, deploy_percent = deploy_days/total_network_days*100)
 
-write_csv(REI, "csv/REI_sp.csv")
+write_csv(REI, paste0("csv/REI_bpns_",sp,".csv"))
 
 ################### CUMULATIVE CURVES #########################
 
