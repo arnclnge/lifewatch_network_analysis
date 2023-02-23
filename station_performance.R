@@ -22,7 +22,7 @@ deploy_active <- deploy_active %>% filter(deploy_date_time > as.POSIXct("2021-12
 
 first_deploy <- deploy %>% group_by(station_name) %>% summarise(first_deploy = min(deploy_date_time)) 
 
-# run mutate & filter if you want to remove new stations = deployments which only started in 2021
+# run mutate & mutate+filter if you want to remove new stations = deployments which only started in 2021
 stn_active <- deploy_active %>% summarise(acoustic_project_code, station_name, deploy_longitude,deploy_latitude) %>% unique() 
   #mutate(first_deploy = first_deploy$first_deploy[match(station_name, first_deploy$station_name)]) %>% 
   #filter(first_deploy < as.POSIXct("2021-01-01 00:00:00", tz="UTC"))
@@ -46,33 +46,39 @@ recv_issue_deploy_info <- deploy %>% filter(receiver_id %in% recv_issue$receiver
   group_by(receiver_id) %>% slice(which.max(deploy_date_time)) %>% 
   mutate(status = recv_issue$status[match(receiver_id, recv_issue$receiver_id)])
 
-# 2. Comments from deployments
+# 2. Comments from deployments --------------------------------------------
 
 # A. get comments from deployments of active stations, use key words to assign status as lost/broken
-deploy <- deploy %>% filter(receiver_id %in% recv) %>% select(comments) %>% distinct()
+deploy_comments <- deploy %>% filter(receiver_id %in% recv) %>% select(deployment_id,comments) %>% distinct()
 
-key_lost <- c('lost', 'Lost', 'los','LOST','miss', 'Miss', 'not found', 'Not found','verdwenen','afwezig') 
-key_broken <- c('broke', 'Broke','BROKEN','broken','vervangen','replaced','Replaced','sterk uitgesleten') 
-key_shore <- c('brought','shore','oever') 
-
-deploy <- deploy %>% mutate(issue = case_when(str_detect(comments,paste(key_lost, collapse="|"))~"lost",
-                                              str_detect(comments,paste(key_broken, collapse="|"))~"broken",
-                                              str_detect(comments,paste(key_shore, collapse="|"))~"brought ashore"))
+# key_lost <- c('lost', 'Lost', 'los','LOST','miss', 'Miss', 'not found', 'Not found') 
+# key_broken <- c('broke', 'Broke','BROKEN','broken','vervangen','replaced','Replaced') 
+# 
+# deploy <- deploy %>% mutate(issue = case_when(str_detect(comments,paste(key_lost, collapse="|"))~"lost",
+#                                               str_detect(comments,paste(key_broken, collapse="|"))~"broken"))
 
 recv_commented <- deploy[!is.na(deploy$issue),] %>% filter(station_name %in% unique(detect$station_name))
 
 # B. status of comments assigned by Jan Reubens manually
 comment_status_JR <- read_csv("csv/comments_JR.csv")
 
+#double check with keywords
+key_lost <- c('lost', 'Lost', 'los','LOST', 'not found', 'Not found') 
+key_broken <- c('broke', 'Broke','BROKEN','broken','vervangen','replaced','Replaced')
+
 #assign status of comments to deploy info of receivers
 deploy <- deploy %>% filter(receiver_id %in% recv) %>% 
-              mutate(status = comment_status_JR$status[match(comments, comment_status_JR$Comment)])
+              mutate(status = comment_status_JR$status[match(comments, comment_status_JR$Comment)]) %>% 
+              mutate(status = case_when(str_detect(comments,paste(key_lost, collapse="|"))~"lost",
+                                      str_detect(comments,paste(key_broken, collapse="|"))~"broken"))
+
 
 # Receivers missing (according to comment) but not marked in the status
 # Cross-reference with lost/broken
 #recv_needs_status_update <- deploy[!is.na(deploy$issue),] %>% filter(!receiver_id %in% recv_issue$receiver_id) #run this if comments status generated from section A
 recv_needs_status_update <- deploy[!is.na(deploy$status),] %>% filter(!receiver_id %in% recv_issue$receiver_id) #run this if comments status generated from section B
 write_csv(recv_needs_status_update, "csv/recv_needs_status_update.csv") #send this to Carlota, update on ETN
+
 
 # 3. Merge receivers with comments and marked in status as lost/broken
 
@@ -95,6 +101,7 @@ ggsave("plots/detections_lost_deploy_timeline.png", device='png', dpi = 300, wid
         # 1. status of receiver is lost/broken but last deployment has a download_file_name = most likely receiver was recovered and data was downloaded
         # 2. status of receiver is not lost/broken, no comments, no download_file_name and deployment already closed = data gap, but is this considered lost/broken?
 deploy_no_downloadfile_no_status <- deploy[is.na(deploy$download_file_name) & is.na(deploy$status) & !is.na(deploy$recover_date_time),]
+  write_csv(deploy_no_downloadfile_no_status, "csv/deploy_no_downloadfile_no_status.csv") #send this to Jan for checking
 deploy_no_downloadfile <- deploy[is.na(deploy$download_file_name) & !is.na(deploy$recover_date_time),]
 deploy_with_download_file <- deploy[!is.na(deploy$download_file_name) & !is.na(deploy$recover_date_time),]
 
@@ -112,10 +119,11 @@ ggsave("plots/deployments_no_download_file.png", device='png', dpi = 300, width=
               
 ######################################--- Overview
 
-#---how many lost /broken receivers per station and per project
-recv_issue_count <- recv_all_issues %>% filter(deploy_date_time > as.Date("2013-12-31")) %>% 
-                                        group_by(acoustic_project_code, station_name) %>% 
-                                        summarise(deploy_with_issues = n()) 
+#---how many lost/broken receivers based on status?
+deploy_count <- deploy %>% filter(deploy_date_time > as.Date("2013-12-31")) %>% 
+                            group_by(acoustic_project_code, station_name) %>% 
+                            summarise(deploy_count = n(), recv_status_lost_broken = sum(status=="lost"|status=="broken", na.rm = TRUE), no_download_file =sum(is.na(download_file_name)& !is.na(recover_date_time)),
+                                      lon = mean(deploy_longitude), lat= mean(deploy_latitude))
 
 #---how many days of data gaps? since not all deployments have recover_date_time, we rely on the next deployment date 
 
@@ -187,13 +195,15 @@ for (i in 1:nrow(data_gaps_station)){
 #####################################---venn diagram with REI
 library(ggvenn)
 
-venn_stn <- drop_na(as.list(read_csv("csv/venn_station.csv")))
+venn_stn <- as.list(read_csv("csv/venn_station.csv"))
 venn_stn <- venn_stn[!is.na(venn_stn)]
 
 ggvenn(venn_stn, show_elements = T, label_sep = "\n", text_size =2.5,
        fill_color = c("#0073C2FF", "#EFC000FF","#CD534CFF"),
        stroke_size = 0.25, stroke_alpha = 0.5, set_name_size = 4)
 ggsave("plots/venn_station_performance.png", device='png', dpi = 300, width=15, height=13)
+
+stn_unnecessary <- intersect(venn_stn$`Stations not needed to meet performance benchmarks`,venn_stn$`Stations with data gaps > 10%`)
 
 #####################################---map of stations with data gaps
 stn_coords <- deploy_2014_in_active_stn %>% group_by(station_name) %>% summarise(lat = mean(deploy_latitude),
@@ -237,5 +247,20 @@ ggplot()+
                          style = north_arrow_fancy_orienteering)
 
 ggsave("plots/datagap_map.png", device='png', dpi =300, width=14, height=7)
+
+# lost/broken receivers
+
+ggplot()+
+  geom_polygon(data = bpns_fortified, aes(x = long, y = lat, group = group), fill="lightgrey", alpha=0.75)+
+  geom_polygon(data=eur_fortified, aes(x = long, y = lat, group = group), fill="white", colour="black")+
+  coord_cartesian(xlim = c(2, 4.4), ylim = c(51,51.9))+
+  geom_point(data=deploy_count, aes(x=lon, y=lat, size = recv_status_lost_broken))+
+  #geom_text_repel(data=stn_active, aes(x=deploy_longitude, y=deploy_latitude, label=station_name), size=3)+
+  theme_classic()+theme(axis.title = element_blank())+
+  annotate(geom = "text", x = c(3.25, 4.4, 2.46), y = c(51.15, 51.5, 51.03), label = c("BE", "NL","FR"), size = 3) +
+  annotation_scale(location = "br", width_hint = 0.2) +
+  annotation_north_arrow(location = "br", which_north = "true", 
+                         pad_x = unit(0.3, "in"), pad_y = unit(0.2, "in"),
+                         style = north_arrow_fancy_orienteering)
 
 # review literature on assessment of data gaps in acoustic telemetry
