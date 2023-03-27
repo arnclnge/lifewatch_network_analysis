@@ -8,7 +8,7 @@ setwd("~/lifewatch_network_analysis/")
 
 #---Extract data
 
-projs <- c("bpns","cpodnetwork")      #  "bpns", "ws1", "ws2","ws3","cpodnetwork"
+projs <- c("bpns", "ws1", "ws2","ws3","cpodnetwork")      #  "bpns", "ws1", "ws2","ws3","cpodnetwork"
 sp <- c("Alosa fallax", "Anguilla anguilla", "Gadus morhua", "Dicentrarchus labrax","Raja clavata") #"Alosa fallax", "Anguilla anguilla", "Gadus morhua", "Dicentrarchus labrax","Raja clavata"
 
 #SETTINGS
@@ -239,7 +239,58 @@ ggplot(unique_an,aes(scientific_name,station_name))+geom_point(size=3, colour='r
 
 #############################################
 
-#---MAP REI + add pins for release locations
+#---MAP REI + add pins for release locations: prepare data frame for mapping in QGIS
+
+#read REI outputs, then combine
+REI_bpns <- read_csv("csv/REI_bpns_5sp.csv")%>% select(station_name, Percent_REI) 
+REI_ws <- read_csv("csv/REI_ws_5sp.csv")%>% select(station_name, Percent_REI)
+REI_all <- rbind(REI_bpns,REI_ws)
+
+REI_Alosa_bpns <- read_csv("csv/REI_bpns_Alosa fallax.csv") %>% select(station_name, Percent_REI)
+REI_Alosa_ws <- read_csv("csv/REI_ws_Alosa fallax.csv") %>% select(station_name, Percent_REI)
+REI_Alosa <- rbind(REI_Alosa_bpns,REI_Alosa_ws) %>% rename(REI_Alosa=Percent_REI)
+
+REI_Anguilla_bpns <- read_csv("csv/REI_bpns_Anguilla anguilla.csv") %>% select(station_name, Percent_REI)
+REI_Anguilla_ws <- read_csv("csv/REI_ws_Anguilla anguilla.csv") %>% select(station_name, Percent_REI)
+REI_Anguilla <- rbind(REI_Anguilla_bpns,REI_Anguilla_ws)%>% rename(REI_Anguilla=Percent_REI)
+
+REI_Dicentrarchus_bpns <- read_csv("csv/REI_bpns_Dicentrarchus labrax.csv") %>% select(station_name, Percent_REI)
+REI_Dicentrarchus_ws <- read_csv("csv/REI_ws_Dicentrarchus labrax.csv") %>% select(station_name, Percent_REI)
+REI_Dicentrarchus <- rbind(REI_Dicentrarchus_bpns,REI_Dicentrarchus_ws)%>% rename(REI_Dicentrarchus=Percent_REI)
+
+REI_Gadus_bpns <- read_csv("csv/REI_bpns_Gadus morhua.csv") %>% select(station_name, Percent_REI)
+REI_Gadus_ws <- read_csv("csv/REI_ws_Gadus morhua.csv") %>% select(station_name, Percent_REI)
+REI_Gadus <- rbind(REI_Gadus_bpns,REI_Gadus_ws)%>% rename(REI_Gadus=Percent_REI)
+
+REI_Raja_bpns <- read_csv("csv/REI_bpns_Raja clavata.csv") %>% select(station_name, Percent_REI)
+REI_Raja_ws <- read_csv("csv/REI_ws_Raja clavata.csv") %>% select(station_name, Percent_REI)
+REI_Raja <- rbind(REI_Raja_bpns,REI_Raja_ws)%>% rename(REI_Raja=Percent_REI)
+
+#merge dataframes
+REI_list <- list(REI_Alosa, REI_Anguilla, REI_Dicentrarchus, REI_Gadus, REI_Raja, REI_all)
+
+#check which stations are spelled differently between the data frames, then change if necessary
+REI_list %>% reduce(full_join, by='station_name') %>% anti_join(stn_active, by="station_name") 
+stn_active$station_name <- recode(stn_active$station_name,"bpns-cpowerreefballs"="bpns-Cpowerreefballs-CPOD")
+
+#merge                                   
+REI_map <- REI_list %>% reduce(full_join, by='station_name') %>% merge(stn_active, by="station_name")
+
+write_csv(REI_map, "csv/REI_map.csv")
+
+#---outputs animal release locations csv (for input to interpolation.py)
+an = get_animals(scientific_name = sp)
+an_release = an %>% group_by(scientific_name,release_longitude,release_latitude) %>% tally()
+
+write_csv(an_release, "csv/an_release.csv")
+
+for (n in 1:n_distinct(an_release$scientific_name)){
+  sp_rel = unique(an_release$scientific_name)
+  sp = sp_rel[n]
+  an_release %>% filter(scientific_name==sp) %>% write_csv(paste0("csv/",sp,"_release.csv"))
+}
+
+
 
 
 
