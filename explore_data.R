@@ -89,6 +89,26 @@ ggplot(data=world) +
 
 ggsave("plots/activeStn_map.png", device='png', dpi =300, width=10, height=7)
 
+#after 40% reduction of the PBARN
+PBARN_new <- read_csv("csv/PBARN_reduction.csv") %>% merge(stn_active, by="station_name")
+
+ggplot()+
+  geom_polygon(data = bpns_fortified, aes(x = long, y = lat, group = group), fill="lightblue", alpha=0.75)+
+  geom_polygon(data=eur_fortified, aes(x = long, y = lat, group = group), fill="lightgrey", colour="black")+
+  coord_cartesian(xlim = c(2.2, 4.3), ylim = c(51.05,51.9))+
+  geom_point(data=stn_active, aes(x=deploy_longitude, y=deploy_latitude, color="inefficient stations"), size = 1.5)+
+  geom_point(data=PBARN_new, aes(x=deploy_longitude, y=deploy_latitude, color="stations to keep"), size = 1.5)+
+  scale_color_manual(values = c("stations to keep"="darkblue","inefficient stations"="grey" ))+
+  geom_text_repel(data=PBARN_new, aes(x=deploy_longitude, y=deploy_latitude, label=station_name), size=2, color = "darkblue")+
+  theme_classic()+theme(axis.title = element_blank(), legend.position = "bottom", legend.title=element_blank())+
+  annotate(geom = "text", x = c(3.25, 4.4, 2.46), y = c(51.15, 51.5, 51.03), label = c("BE", "NL","FR"), size = 3) 
+#annotation_scale(location = "br", width_hint = 0.2) +
+#annotation_north_arrow(location = "br", which_north = "true", 
+#pad_x = unit(0.3, "in"), pad_y = unit(0.2, "in"),
+#style = north_arrow_fancy_orienteering)
+
+ggsave("plots/PBARN_reduced.png", device='png', dpi =300, width=10, height=6)
+
 
 # 3. Timeline of when species were tagged and station detections
 

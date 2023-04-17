@@ -104,7 +104,7 @@ REI <- detect %>% group_by(acoustic_project_code,station_name) %>% summarise(no_
                                                                              no_species = length (unique(scientific_name)),
                                                                              detection_days = length(unique(date))) %>%
   mutate(deploy_days= deploy_summary$deploy_days[match(station_name,deploy_summary$station_name)],
-         rei = (no_tags/total_tags)*(no_species/total_species)*(detection_days/total_detection_days)*(total_network_days/deploy_days)*1000)
+         rei = (no_tags/total_tags)*(no_species/total_species)*(detection_days/total_detection_days)*(total_network_days/deploy_days)*1000) #1000 is an arbitrary number to make the number more readable
 
 sumREI <- sum(REI$rei)
 REI$Percent_REI <- REI$rei/sumREI*100

@@ -24,8 +24,8 @@ first_deploy <- deploy %>% group_by(station_name) %>% summarise(first_deploy = m
 
 # run mutate & mutate+filter if you want to remove new stations = deployments which only started in 2021
 stn_active <- deploy_active %>% summarise(acoustic_project_code, station_name, deploy_longitude,deploy_latitude) %>% unique() 
-  #mutate(first_deploy = first_deploy$first_deploy[match(station_name, first_deploy$station_name)]) %>% 
-  #filter(first_deploy < as.POSIXct("2021-01-01 00:00:00", tz="UTC"))
+#mutate(first_deploy = first_deploy$first_deploy[match(station_name, first_deploy$station_name)]) %>% 
+#filter(first_deploy < as.POSIXct("2021-01-01 00:00:00", tz="UTC"))
 
 # get detections from active stations
 detect <- get_acoustic_detections(acoustic_project_code = projs,station_name = stn_active$station_name, start_date = 2014) %>%  #scientific_name =sp for specific species
@@ -68,23 +68,27 @@ key_broken <- c('broke', 'Broke','BROKEN','broken','vervangen','replaced','Repla
 
 #assign status of comments to deploy info of receivers
 deploy <- deploy %>% filter(receiver_id %in% recv) %>% 
-              mutate(status = comment_status_JR$status[match(comments, comment_status_JR$Comment)]) %>% 
-              mutate(status = case_when(str_detect(comments,paste(key_lost, collapse="|"))~"lost",
-                                      str_detect(comments,paste(key_broken, collapse="|"))~"broken"))
-
+  mutate(status = comment_status_JR$status[match(comments, comment_status_JR$Comment)]) %>% 
+  mutate(status = case_when(str_detect(comments,paste(key_lost, collapse="|"))~"lost",
+                            str_detect(comments,paste(key_broken, collapse="|"))~"broken"))
 
 # Receivers missing (according to comment) but not marked in the status
 # Cross-reference with lost/broken
 #recv_needs_status_update <- deploy[!is.na(deploy$issue),] %>% filter(!receiver_id %in% recv_issue$receiver_id) #run this if comments status generated from section A
 recv_needs_status_update <- deploy[!is.na(deploy$status),] %>% filter(!receiver_id %in% recv_issue$receiver_id) #run this if comments status generated from section B
-write_csv(recv_needs_status_update, "csv/recv_needs_status_update.csv") #send this to Carlota, update on ETN
+
+#check last deployment info of these receivers
+recv_needs_update_deploy_info <- deploy %>% filter(receiver_id %in% recv_needs_status_update$receiver_id) %>% 
+  group_by(receiver_id) %>% slice(which.max(deploy_date_time)) %>% filter()
+
+write_csv(recv_needs_update_deploy_info, "csv/recv_needs_update_deploy_info.csv") #send this to Carlota, update on ETN
 
 
 # 3. Merge receivers with comments and marked in status as lost/broken
 
 #last deployment info of all lost/broken receivers
 recv_all_issues <- rbind(as.data.frame(recv_issue_deploy_info),as.data.frame(recv_needs_status_update)) %>% 
-                      filter(station_name %in% unique(detect$station_name))
+  filter(station_name %in% unique(detect$station_name))
 
 ######################################--- Plot data gaps per receiver of each station and lost/broken receivers
 
@@ -97,11 +101,11 @@ ggsave("plots/detections_lost_deploy_timeline.png", device='png', dpi = 300, wid
 
 #---data gaps: plot deployments and if download_file_name is present
 
-    #there are different cases:
-        # 1. status of receiver is lost/broken but last deployment has a download_file_name = most likely receiver was recovered and data was downloaded
-        # 2. status of receiver is not lost/broken, no comments, no download_file_name and deployment already closed = data gap, but is this considered lost/broken?
+#there are different cases:
+# 1. status of receiver is lost/broken but last deployment has a download_file_name = most likely receiver was recovered and data was downloaded
+# 2. status of receiver is not lost/broken, no comments, no download_file_name and deployment already closed = data gap, but is this considered lost/broken?
 deploy_no_downloadfile_no_status <- deploy[is.na(deploy$download_file_name) & is.na(deploy$status) & !is.na(deploy$recover_date_time),]
-  write_csv(deploy_no_downloadfile_no_status, "csv/deploy_no_downloadfile_no_status.csv") #send this to Jan for checking
+write_csv(deploy_no_downloadfile_no_status, "csv/deploy_no_downloadfile_no_status.csv") #send this to Jan for checking
 deploy_no_downloadfile <- deploy[is.na(deploy$download_file_name) & !is.na(deploy$recover_date_time),]
 deploy_with_download_file <- deploy[!is.na(deploy$download_file_name) & !is.na(deploy$recover_date_time),]
 
@@ -109,42 +113,43 @@ deploy_with_download_file <- deploy[!is.na(deploy$download_file_name) & !is.na(d
 
 #exclude open deployments when plotting no download files 
 deploy %>% filter(!deployment_id %in% deploy_active$deployment_id) %>% 
-            ggplot(aes(x = deploy_date_time, y = station_name)) + geom_point(size = 1) + 
-                  geom_linerange(data = deploy_with_download_file, aes(xmin = deploy_date_time, xmax = recover_date_time, color ="deployment to recovery")) +
-                  geom_point(data = deploy_no_downloadfile, aes(deploy_date_time,station_name, color ="no download file"),shape = 18, size = 3)+
-                  scale_color_manual(values = c("black","red"))+
-                  theme_linedraw()+ggtitle("Overview of deployments & data availability")+theme(legend.title=element_blank())
+  ggplot(aes(x = deploy_date_time, y = station_name)) + geom_point(size = 1) + 
+  geom_linerange(data = deploy_with_download_file, aes(xmin = deploy_date_time, xmax = recover_date_time, color ="deployment to recovery")) +
+  geom_point(data = deploy_no_downloadfile, aes(deploy_date_time,station_name, color ="no download file"),shape = 18, size = 3)+
+  scale_color_manual(values = c("black","red"))+
+  theme_linedraw()+ggtitle("Overview of deployments & data availability")+theme(legend.title=element_blank())
 
 ggsave("plots/deployments_no_download_file.png", device='png', dpi = 300, width=14, height=9)
-              
+
 ######################################--- Overview
 
 #---how many lost/broken receivers based on status?
 deploy_count <- deploy %>% filter(deploy_date_time > as.Date("2013-12-31")) %>% 
-                            group_by(acoustic_project_code, station_name) %>% 
-                            summarise(deploy_count = n(), recv_status_lost_broken = sum(status=="lost"|status=="broken", na.rm = TRUE), no_download_file =sum(is.na(download_file_name)& !is.na(recover_date_time)),
-                                      lon = mean(deploy_longitude), lat= mean(deploy_latitude))
+  group_by(acoustic_project_code, station_name) %>% 
+  summarise(deploy_count = n(), recv_status_lost_broken = sum(status=="lost"|status=="broken", na.rm = TRUE), no_download_file =sum(is.na(download_file_name)& !is.na(recover_date_time)),
+            lon = mean(deploy_longitude), lat= mean(deploy_latitude))
 
 #---how many days of data gaps? since not all deployments have recover_date_time, we rely on the next deployment date 
 
 #get deployments from active stations
 deploy_all_in_active_stn <- get_acoustic_deployments(acoustic_project_code = projs, open_only = FALSE) %>% 
-                              filter(station_name %in% stn_active$station_name) %>% 
-                              mutate(next_deploy = as.Date(NA), day_count_to_next_deploy=NA) %>% 
-                              group_by(station_name) %>% arrange(deploy_date_time, .by_group=TRUE) %>% as.data.frame()
+  filter(station_name %in% stn_active$station_name) %>% 
+  filter(!(deployment_id %in% deploy_active$deployment_id)) %>% 
+  mutate(next_deploy = as.Date(NA), day_count_to_next_deploy=NA) %>% 
+  group_by(station_name) %>% arrange(deploy_date_time, .by_group=TRUE) %>% as.data.frame()
 
 #convert deploy times to dates
 deploy_all_in_active_stn$deploy_date_time <- as.Date(deploy_all_in_active_stn$deploy_date_time)
 
 #fills in next_deploy with the next deployment date in the station
 for (n in 1:nrow(deploy_all_in_active_stn)){
-      print(n)
-      if (deploy_all_in_active_stn[n,"station_name"] == deploy_all_in_active_stn[n+1,"station_name"]) {
-            deploy_all_in_active_stn[n,"next_deploy"] <- deploy_all_in_active_stn$deploy_date_time[n+1]
-          
-      } else {
-          deploy_all_in_active_stn[n,"next_deploy"] <- NA
-    }}
+  print(n)
+  if (deploy_all_in_active_stn[n,"station_name"] == deploy_all_in_active_stn[n+1,"station_name"]) {
+    deploy_all_in_active_stn[n,"next_deploy"] <- deploy_all_in_active_stn$deploy_date_time[n+1]
+    
+  } else {
+    deploy_all_in_active_stn[n,"next_deploy"] <- NA
+  }}
 
 #count the days of deployments with no download file from 2014! 
 deploy_2014_in_active_stn <- deploy_all_in_active_stn %>% filter(deploy_date_time > as.Date("2013-12-31"))
@@ -156,23 +161,23 @@ for (i in 1:nrow(deploy_2014_in_active_stn)){
 }
 
 datagap_station <- deploy_2014_in_active_stn %>% filter(is.na(download_file_name)) %>% group_by(station_name) %>% 
-                          summarise(days_no_data = sum(day_count_to_next_deploy, na.rm=TRUE))
+  summarise(days_no_data = sum(day_count_to_next_deploy, na.rm=TRUE))
 
 #add first day of deployment, number of days, number of deployments
 #calculate percentage of total deployment days with no download file
 datagap_station <- deploy_2014_in_active_stn %>% group_by(acoustic_project_code, station_name) %>% 
-                              summarise(first_deploy = min(deploy_date_time), 
-                                        total_days_active = length(seq(first_deploy, Sys.Date(), by = 1)),
-                                        no_deployments = n()) %>% 
-                              merge(datagap_station,by=c("station_name"), all=TRUE) %>% 
-                              mutate(datagap_percent = days_no_data/total_days_active*100)
+  summarise(first_deploy = min(deploy_date_time), 
+            total_days_active = length(seq(first_deploy, Sys.Date(), by = 1)),
+            no_deployments = n()) %>% 
+  merge(datagap_station,by=c("station_name"), all=TRUE) %>% 
+  mutate(datagap_percent = days_no_data/total_days_active*100)
 
 
 #merge info on lost/broken receivers & data gap
 deploy_no_downloadfile_summary <- deploy_no_downloadfile %>% group_by(station_name) %>% summarise(deploy_no_downloadfile = n())
 station_performance_summary <- merge(datagap_station, recv_issue_count, by=c("station_name"), all=TRUE)
 station_performance_summary <- merge(station_performance_summary,deploy_no_downloadfile_summary, by= c("station_name"), all =TRUE) %>% 
-                                select(-c("acoustic_project_code.x","acoustic_project_code.y"))
+  select(-c("acoustic_project_code.x","acoustic_project_code.y"))
 write_csv(station_performance_summary, "csv/station_performance_summary.csv")
 
 #---- plot data gap percent
@@ -198,10 +203,10 @@ library(ggvenn)
 venn_stn <- as.list(read_csv("csv/venn_station.csv"))
 venn_stn <- venn_stn[!is.na(venn_stn)]
 
-ggvenn(venn_stn, show_elements = T, label_sep = "\n", text_size =2.5,
+ggvenn(venn_stn[c(1,2,5)], show_elements = T, label_sep = "\n", text_size =3,
        fill_color = c("#0073C2FF", "#EFC000FF","#CD534CFF"),
        stroke_size = 0.25, stroke_alpha = 0.5, set_name_size = 4)
-ggsave("plots/venn_station_performance.png", device='png', dpi = 300, width=15, height=13)
+ggsave("plots/venn_station_performance_Anguilla anguilla.png", device='png', dpi = 300, width=15, height=13)
 
 stn_unnecessary <- intersect(venn_stn$`Stations not needed to meet performance benchmarks`,venn_stn$`Stations with data gaps > 10%`)
 
@@ -209,7 +214,7 @@ stn_unnecessary <- intersect(venn_stn$`Stations not needed to meet performance b
 stn_coords <- deploy_2014_in_active_stn %>% group_by(station_name) %>% summarise(lat = mean(deploy_latitude),
                                                                                  lon = mean(deploy_longitude))
 data_gap_map <- station_performance_summary %>% filter(datagap_percent >0) %>% 
-                                                merge(stn_coords,by = "station_name")
+  merge(stn_coords,by = "station_name")
 library(rnaturalearth)
 library(rnaturalearthdata)
 library(ggrepel)
@@ -263,4 +268,4 @@ ggplot()+
                          pad_x = unit(0.3, "in"), pad_y = unit(0.2, "in"),
                          style = north_arrow_fancy_orienteering)
 
-# review literature on assessment of data gaps in acoustic telemetry
+
