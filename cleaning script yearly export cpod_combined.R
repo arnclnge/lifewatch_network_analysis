@@ -60,11 +60,26 @@ colnames(DP)[18] = "Temperature"
 
 DP$`Datetime (UTC)` = as.POSIXct(DP$`Datetime (UTC)`, tz="UTC", format = "%Y-%m-%d %H:%M:%S")
 
-#####################
+#remove no recorded minutes
+DP<-DP %>%
+  filter(!((DP$Recorded == '0')  ))
+DP<-droplevels(DP)
+
+#Check for missing data 
+colSums(is.na(DP))
+#a lot of missing data for the lat and longitude
+DP$Latitude[DP$Station == "bpns-Reefballs-cpower"]<-"51.580667"
+DP$Longitude[DP$Station == "bpns-Reefballs-cpower"]<-"2.996"
+colSums(is.na(DP))
+
+#Check levels of quality, so you know if there is some data missing
+levels(DP$Quality)
 
 #temperature  = 0 --> CPOD WAS NOT RECORDING
-#delete rows with recorded = 0
+
 #check temperature again
+
+#####################
 
 write_csv(DP, "Cetacean passive acoustic network 2022.csv")
 
@@ -103,6 +118,7 @@ DF<-DF %>%
   )
 #zone should be same as station for unique stations
 DF$Zone<-DF$Station
+
 write.csv(DF, "Cetacean passive acoustic network 2021bis.csv",row.names=FALSE)
 str(DF)
 summary(DF)
