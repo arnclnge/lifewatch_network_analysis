@@ -123,3 +123,38 @@ write.csv(DF, "Cetacean passive acoustic network 2021bis.csv",row.names=FALSE)
 str(DF)
 summary(DF)
 
+#################################
+
+#Script to aggregate minute-resolution exports to hourly-resolution
+
+#check for yearly exports
+rm(list=ls())
+d0=read.csv("Cetacean passive acoustic network 2022.csv", header=TRUE, sep = ",")
+library( lubridate)
+#per hour
+#extra parameter DPH= detection positive hours
+#dataset per hour from dataset per min
+#Step 1: set datetime utc per hour
+d0$min<-as.POSIXct(d0$Datetime..UTC. , format = "%Y-%m-%d  %H:%M" , tz="UTC")
+d0$min60 <-as.POSIXlt(floor(as.numeric(d0$min)/(60*60))*(60*60),origin=(as.POSIXlt('1970-01-01 00:00')), tz="UTC")
+
+d0$min60<-as.POSIXct(d0$min60 , format = "%Y-%m-%d  %H:%M" , tz="UTC")
+
+#Step 2: dataset aggregation per hour, sum most of the variables
+DFh=aggregate(cbind(Recorded=d0$Recorded, Lost_minutes= d0$Lost_minutes, Number_clicks_total=d0$Number_clicks_total, sumDPM=d0$Dpm, Milliseconds=d0$Milliseconds, Number_clicks_filtered=d0$Number_clicks_filtered)~ min60+Projectname+Station + Zone + Latitude+Longitude+Mooring_type+Species+Receiver+Quality+Deployment_fk+Deploy_date_time+Recover_date_time+Valid_data_until_datetime, data=d0, FUN=sum)#DPH = dph = detections positive hour
+### dpm wordt naar dph vertaald (vanaf dat je 1 positive dpm hebt is het uur ook positief), hier wordt géén rekening gehouden of we een volledig uur gemeten hebben 
+DFh$Dph<- ifelse(is.na(DFh$sumDPM)| DFh$sumDPM== 0, "0", "1")
+DFh$Dph<-as.integer(DFh$Dph)
+
+#Rename min60 to Datetime (UTC)
+names(DFh)[names(DFh) == "min60"] <- "Datetime..UTC."
+names(DFh)[names(DFh) == "sumDPM"] <- "sumDpm"
+#reorder columns to match dataset 2021
+library(dplyr)
+DF = DFh%>% select(Projectname, Station, Zone, Latitude, Longitude, 
+                   Mooring_type,Species, Receiver, Quality, Datetime..UTC., Milliseconds, 
+                   Number_clicks_filtered, Number_clicks_total, Lost_minutes,
+                   Recorded, sumDpm, Dph, Deployment_fk, Deploy_date_time, Recover_date_time, Valid_data_until_datetime  )
+write.csv(DF, "Cetacean passive acoustic network 2022 hourly.csv",row.names=FALSE)
+
+
